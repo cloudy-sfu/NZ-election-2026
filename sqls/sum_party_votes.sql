@@ -1,0 +1,2 @@
+select sum(votes)
+from party_votes_rnz_preliminary
