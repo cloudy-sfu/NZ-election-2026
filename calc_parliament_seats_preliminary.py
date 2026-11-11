@@ -60,8 +60,14 @@ party_seats = pd.merge(
 party_seats["parliament_seats"] = party_seats.max(axis=1)
 
 # %% Display results.
-party_seats_ = party_seats.join(party_names).sort_values(
+party_seats = party_seats.join(party_names).sort_values(
     "parliament_seats", ascending=False)[["party_name", "parliament_seats"]]
+
+ind_party_id = 0
+while ind_party_id in eligible_parties_id:
+    ind_party_id += 1
+party_seats.loc[ind_party_id, "party_name"] = "Independent"
+party_seats.loc[ind_party_id, "parliament_seats"] = ind_seats
 
 with pd.option_context(
     "display.max_rows", None,
@@ -69,6 +75,7 @@ with pd.option_context(
     "display.max_colwidth", None,
     "display.width", 1000
 ):
-    print(party_seats_)
-total_parliament_seats = party_seats_["parliament_seats"].sum() + ind_seats
+    print(party_seats)
+total_parliament_seats = party_seats["parliament_seats"].sum()
 print("Total parliament seats:", total_parliament_seats)
+party_seats.to_csv("results/parliament_seats_preliminary.csv")
