@@ -1,7 +1,5 @@
 # Ref: Shapley, L. S., & Shubik, M. (1954). A Method for Evaluating the Distribution of Power in a Committee System.
 #      American Political Science Review, 48(3), 787–792.
-import math
-
 import numpy as np
 import pandas as pd
 
@@ -15,32 +13,39 @@ active_parties = seats[seats["parliament_seats"] > 0]
 dummy_parties = seats[seats["parliament_seats"] == 0]
 
 # %% Define constants of Shapley Shubik power index.
-q = math.ceil(active_parties["parliament_seats"].sum() / 2)
+q = active_parties["parliament_seats"].sum() // 2 + 1
 n = active_parties.shape[0]
 weights = active_parties["parliament_seats"].to_numpy()
-# Precompute permutation weighting factors: k! * (n - 1 - k)!
-perm_weights = np.array([math.factorial(k) * math.factorial(n - 1 - k) for k in range(n)])
-n_fact = math.factorial(n)
 s = np.zeros(n, dtype=np.float64)
+# k! * (n - 1 - k)! / n!
+factor = np.cumprod(
+    np.r_[1 / n, np.arange(1, n) / np.arange(n - 1, 0, -1)]
+)
 
-# %% Dynamic programming for each party.
-for i in range(n):
-    other_weights = np.delete(weights, i)
-    # dp[coalition_size, weight] holds subset counts
-    # Size: (n rows: 0 to n-1) x (q columns: 0 to q-1)
-    dp = np.zeros((n, q))
-    dp[0, 0] = 1  # Base case: empty coalition has size 0, weight 0
+# %% Build the shared DP using all parties.
+dp = np.zeros((n + 1, q), dtype=np.int64)
+dp[0, 0] = 1
+for i, w in enumerate(weights):
+    if w >= q:
+        continue
+    dp[1:i + 2, w:q] += dp[:i + 1, :q - w]
 
-    # Vectorized DP knapsack update over other parties
-    for w in other_weights:
-        for k in reversed(range(n - 1)):
-            # Shift and add counts across weights in [w, q - 1]
-            dp[k+1, w:q] += dp[k, :q-w]
-
-    # Vectorized swing accumulation across all coalition sizes k
-    swings_by_k = dp[:, max(0, q - weights[i]) : q].sum(axis=1)
-    total_pivotal_perms = np.sum(swings_by_k * perm_weights)
-    s[i] = total_pivotal_perms / n_fact
+# %% Recover excluded-party counts using reusable buffers.
+previous = np.zeros(q, dtype=np.int64)
+current = np.zeros(q, dtype=np.int64)
+swings_by_k = np.zeros(n, dtype=np.int64)
+for i, w in enumerate(weights):
+    if w >= q:
+        s[i] = 1
+        continue
+    previous[:] = dp[0]
+    swings_by_k[0] = np.sum(previous[q - w:])
+    for k in range(1, n):
+        current[:w] = dp[k, :w]
+        np.subtract(dp[k, w:], previous[:q - w], out=current[w:])
+        swings_by_k[k] = np.sum(current[q - w:])
+        previous, current = current, previous
+    s[i] = np.dot(swings_by_k, factor)
 
 # %% Merge results of zero seat parties.
 active_parties["shapley_index"] = s
@@ -51,4 +56,4 @@ results = results[["party_name", "shapley_index"]].sort_values(
     by="shapley_index", ascending=False)
 
 # %% Export.
-results.to_csv("results/shapley_shubik_power_index.csv",)
+results.to_csv("results/shapley_shubik_power_index.csv")
